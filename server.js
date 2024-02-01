@@ -19,7 +19,7 @@ const fastify = require('fastify')({
 
   async function getSubscribersFromBigCommerce(page){
     let BASE_URL = `https://api.bigcommerce.com/stores/${process.env.STORE_HASH}/v3/customers/subscribers`;
-    console.log(BASE_URL)
+    // console.log(BASE_URL)
     if(page && page !== 1){
       BASE_URL += `?page=${page}`
     }
@@ -49,7 +49,7 @@ const fastify = require('fastify')({
     while(page === 1 + offset || shouldRun()) {
 
       let subscribers = await getSubscribersFromBigCommerce(page);
-      console.log(subscribers)
+      // console.log(subscribers)
       currentList = subscribers.data;
       allSubscribers.push(subscribers.data)
       page++
@@ -79,12 +79,93 @@ const fastify = require('fastify')({
     return newEmails
   }
 
+  async function getProspectByEmail(email) {
+    try {
+        let URL = 'https://api.na1.insightly.com/v3.1/Prospect/Search?field_name=EMAIL_ADDRESS&field_value=' + email;
+        // console.log(URL)
+                let response = await fetch(URL,{
+                    method: 'GET',
+                    headers: {
+                        'Accept' : 'application/json',
+                        'Authorization': `Basic ${process.env.Insightly_API_KEY}`,
+                      },
+                });
+                let data = await response.json()
+                let arrayProspectID =data.map(obj => obj.PROSPECT_ID)
+                prospectID = arrayProspectID[0]
+                console.log(prospectID)
+        return prospectID
+    } catch (error) {
+        console.error(error.message);
+        return null;
+    }
+}
+
+
+
+
+async function addProspectToList(id) {
+  try {
+      let url = 'https://api.na1.insightly.com/v3.1/Prospect/' + id + '/StaticListMembership';
+      let response = await fetch(url,{
+          method: 'POST',
+          headers: {
+              'Accept' : 'application/json',
+              'Content-Type': 'application/json',
+              'Authorization': `Basic ${process.env.Insightly_API_KEY}`,
+            },
+            body: JSON.stringify({
+              LIST_ID:92950 // static list for BC subscribers
+            })
+      });
+      console.log("Linking Prospect")
+  } catch (error) {
+      console.error(error);
+      return null;
+  }
+}
+async function createProspect(email) {
+  try {
+  let url = 'https://api.na1.insightly.com/v3.1/Prospect/';
+  let response = await fetch(url,{
+      method: 'POST',
+      headers: {
+          'Accept' : 'application/json',
+          'Content-Type': 'application/json',
+          'Authorization': `Basic ${process.env.Insightly_API_KEY}`,
+        },
+        body:  JSON.stringify({
+          "EMAIL_ADDRESS": email,
+          "LAST_NAME": email
+        })
+  });
+  let data = await response.json()
+      let id= (data.PROSPECT_ID)
+      console.log("email isn't in Insightly, creating prospect and linking")
+      addProspectToList(id)
+} catch (error) {
+  console.error(error);
+  return null;
+  }
+}
 
 
 
   fastify.get('/', async function (request, reply) {
 
-    let newEmails = getNewEmails();
+    let newEmails = await getNewEmails()
+    console.log(newEmails.length)
+    for(let i=0;i<newEmails.length;i++){
+    let email = newEmails[i]
+    console.log(email)
+    prospectID = await getProspectByEmail(email)
+    if(prospectID){
+      addProspectToList(prospectID)
+      console.log("email is in Insightly")
+    }else{
+      createProspect(email)
+    }
+}
     reply.send(newEmails)
     
 
